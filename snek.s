@@ -207,12 +207,18 @@ main:
     strh    r1, [REG_BASE, #BG0CNT]     @ REG_BG0CNT
     lsls    r2, r1, #8-2                @ 0x100 == BG0_ENABLE
     strh    r2, [REG_BASE, #DISPCNT]    @ REG_DISPCNT
+
+    @ input testing
+    @ KEYINPUT layout
+    @ Bit = 1: released, Bit = 0: pressed, which is backwards
+    @   9     8      7     6    5       4        3      2      1   0
+    @   L  |  R  | Down | Up | Left | Right | Start | Select | B | A
 .Ltest_inputs:
     ldrh    r2, [TIMER_BASE, #KEYINPUT] @ read REG_KEYINPUT
     lsls    r2, #24                     @ shift left so the d-pad bits are on top
 .Linput_loop:                           @ note: r1 is still 4.
-    lsls    r2, #1                      @ shift next bit into carry flag
-    bcs     .Lnot_pressed               @ carry flag = button NOT pressed
+    lsls    r2, #1                      @ Test next bit into carry flag
+    bcs     .Lnot_pressed               @ CS = bit set = not pressed
     subs    Direction, r1, #1           @ note: minus one because we decrement after
 .Lnot_pressed:
     subs   r1, #1                       @ repeat for all directions
