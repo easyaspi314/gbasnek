@@ -200,31 +200,24 @@ main:
     ldrh    r0, [REG_BASE, #VCOUNT]     @ VCOUNT
     cmp     r0, #SCREEN_HEIGHT
     blo     .Lvblank_loop
-    subs    r1, #1
+    subs    r1, #1                      @ end of frame, loop again
     bge     .Ldelay_frames
 .Ldelay_frames.end:
-    movs    r1, #(1 << 2)               @ set tiles to block 1
+    movs    r1, #(1 << 2)               @ set tiles to block 1, also value 4 
     strh    r1, [REG_BASE, #BG0CNT]     @ REG_BG0CNT
-    lsls    r1, #8-2                    @ 0x100 == BG0_ENABLE
-    strh    r1, [REG_BASE, #DISPCNT]    @ REG_DISPCNT
+    lsls    r2, r1, #8-2                @ 0x100 == BG0_ENABLE
+    strh    r2, [REG_BASE, #DISPCNT]    @ REG_DISPCNT
 .Ltest_inputs:
     ldrh    r2, [TIMER_BASE, #KEYINPUT] @ read REG_KEYINPUT
-    lsrs    r2, #5                      @ test RIGHT bit by shifting out
-    bcs     .Lnot_right                 @ CS = not pressed
-    movs    Direction, #TILE_RIGHT
-.Lnot_right:
-    lsrs    r2, #1                      @ test LEFT                  
-    bcs     .Lnot_left
-    movs    Direction, #TILE_LEFT
-.Lnot_left:
-    lsrs    r2, #1                      @ test UP
-    bcs     .Lnot_up
-    movs    Direction, #TILE_UP
-.Lnot_up:
-    lsrs    r2, #1                      @ test DOWN
-    bcs     .Lnot_down
-    movs    Direction, #TILE_DOWN
-.Lnot_down:
+    lsls    r2, #24                     @ shift left so the d-pad bits are on top
+.Linput_loop:                           @ note: r1 is still 4.
+    lsls    r2, #1                      @ shift next bit into carry flag
+    bcs     .Lnot_pressed               @ carry flag = button NOT pressed
+    subs    Direction, r1, #1           @ note: minus one because we decrement after
+.Lnot_pressed:
+    subs   r1, #1                       @ repeat for all directions
+    bne   .Linput_loop
+.Linput_loop.end:
     strh    Direction, [TILES, Head]    @ save snek tile with next direction
     adr     r3, direction_lut           @ Move head pointer
     ldrsb   r0, [r3, Direction]
