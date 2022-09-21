@@ -2,7 +2,7 @@
 
 a smol snek game for the gba
 
-it is 352 bytes smol and wishes to become smoller
+it is 352 bytes smol and wishes 2 become smoller
 
 ### how 2 play
 
