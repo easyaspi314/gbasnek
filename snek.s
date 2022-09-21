@@ -79,6 +79,7 @@
     TILES       .req r4                  @ 0x06000000 (tile map 0)
     TIMER_BASE  .req r7                  @ 0x04000100
     PAL_RAM     .req r6                  @ 0x05000000 (overwritten)
+    LUT         .req r3                  @ direction lookup table
 
     Head        .req r6
     Direction   .req r5
@@ -225,8 +226,8 @@ main:
     bne   .Linput_loop
 .Linput_loop.end:
     strh    Direction, [TILES, Head]    @ save snek tile with next direction
-    adr     r3, direction_lut           @ Move head pointer
-    ldrsb   r0, [r3, Direction]
+    adr     LUT, direction_lut          @ Move head pointer
+    ldrsb   r0, [LUT, Direction]
     adds    Head, r0                    @ note: sets flags
     blt     .Lplay_again                @ too high
     lsrs    r0, Head, #5 + 1            @ (head / 32) / 2
@@ -246,7 +247,7 @@ main:
     ldrh    r1, [TILES, r0]             @ load tail direction
     movs    r2, #TILE_EMPTY             @ erase
     strh    r2, [TILES, r0]             @ move tail to the next tile
-    ldrsb   r3, [r3, r1]                @ move tail pointer
+    ldrsb   r3, [LUT, r1]               @ move tail pointer
     add     Tail, r3
     b       .Lgame_loop
 
