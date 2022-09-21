@@ -25,7 +25,7 @@ AS="${AS:-${BINUTILS_PREFIX}as}"
 LD="${LD:-${BINUTILS_PREFIX}ld}"
 OBJCOPY="${OBJCOPY:-${BINUTILS_PREFIX}objcopy}"
 ASFLAGS="${ASFLAGS:- -mcpu=arm7tdmi --no-pad-sections}"
-LDFLAGS="${LDFLAGS:- -Ttext=0x08000000 -nostdlib -static}"
+LDFLAGS="${LDFLAGS:- -Ttext=0x08000000 -nostdlib -static -n}"
 OBJCOPY_FLAGS="${OBJCOPY_FLAGS:- -O binary -j .text}"
 THUMB_NOP="$(printf '\300\106')"  # c0 46 - Thumb-1 ARMv4 NOP (mov r8, r8)
 
