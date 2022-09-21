@@ -2,7 +2,7 @@
 
 a smol snek game for the gba
 
-it is 366 bytes smol and wishes to become smoller
+it is 364 bytes smol and wishes to become smoller
 
 ### how 2 play
 
@@ -13,8 +13,6 @@ u use the dpad 2 move green snek and eat red appel, when u eat red appel u get l
 u dont want 2 eat urself or wall, that is bad
 
 dont try 2 move backwards btw that is a skill issue and u die
-
-btw if u play on flash cart or use gba bios, use snek.gba, if u use emulator without bios use snek-emu.gba
 
 ### Building
 
@@ -36,23 +34,19 @@ Linux armhf toolchain installed, you can run this:
 ./build.sh arm-linux-gnueabihf-
 ```
 
-The output will be snek.gba and snek-emu.gba, as well as some intermediate files.
+The output will be snek.gba, as well as some intermediate files.
 
 ### Notes
 
-This uses a "barely legal" ROM header which puts code in the header fields, and also
-relies on the register state from the official BIOS.
+This uses a *barely legal* ROM header which puts code in the header fields, in a way similar
+to ["A Whirlwind Tutorial on Creating Really Teensy ELF Executables for Linux](https://www.muppetlabs.com/~breadbox/software/tiny/teensy.html).
 
-However, without the official BIOS, the current (as of writing) versions of mGBA and
-VBA-M will **not** have the correct registers and will crash. Therefore, there is also
-snek-emu.gba which will run on emulator bios. I have opened a PR on mGBA and will open
-one for VBA-M as well. This will **not** run on official BIOS or hardware because the
-checksum is wrong.
+The `push` instruction is used to encode *and* correct the checksum (as well as push `r0` to
+the stack so it can be used for the `CpuSet` call).
 
-The weird instruction choices are brute forced to cause the checksum to be `0xDF`, which
-is the opcode for `swi`, meaning I don't have to jump over the checksum field. However,
-this also means that any changes to the code must ensure the checksum is correct. The checksum
-will be calculated if you have xxd installed.
+If you modify the code in the header, you must modify the list of registers. The build script
+will mention it. In the future I will make the build script automatically update or calculate
+the required register list.
 
 ### Contributing
 
@@ -74,7 +68,7 @@ The intentional bugs/oversights:
    works, there may be tiles that it won't spawn on, or it can lag/softlock if it can't find an
    empty tile.
  - There is no win condition, you just play until you die or the previous thing happens
- - vBlank is a busy spin loops
+ - vBlank is a busy spin loop
  - The ROM header is not to spec (Oh no! Anyways...)
 
 Make sure that the code boots on, at the very least, mGBA with the official GBA bios.

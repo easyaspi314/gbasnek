@@ -52,6 +52,7 @@ get_bytes()
     xxd -ps -s $2 -l ${3:-1} $1 | fold -b -w 2
 }
 
+# TODO: actually correct the checksum
 checksum()
 {
     if command -v xxd >/dev/null
@@ -78,9 +79,6 @@ checksum()
     fi
 }
 
-# normal version
 build snek
-# emulator bios version
-build snek-emu --defsym EMULATOR_BIOS=1
 # validate checksum
 checksum snek.gba

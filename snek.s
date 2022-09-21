@@ -71,6 +71,7 @@
         .byte \val
     .endm
 
+
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @                      REGISTERS                   @
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -79,9 +80,9 @@
     TIMER_BASE  .req r7                  @ 0x04000100
     PAL_RAM     .req r6                  @ 0x05000000 (overwritten)
 
-    head        .req r6
-    direction   .req r5
-    tail        .req r9                  @ NOTE: hi register
+    Head        .req r6
+    Direction   .req r5
+    Tail        .req r9                  @ NOTE: hi register
 
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @                     ROM HEADER                   @
@@ -111,10 +112,9 @@ _start:
     @ The GBA doesn't check most of these fields, it only cares about the logo,
     @ the checksum, and the fixed value.
     @ 
-    @ IMPORTANT: These instructions have been brute forced to have a checksum of
-    @ 0xDF, which corresponds to the second byte of the swi SWI_RlUnCompVram instruction.
-    @ This includes the offset for the adr instruction, so if you change ANYTHING, make sure
-    @ to update these instructions.
+    @ IMPORTANT: These next few instructions are sensitive: changing a single byte
+    @ will require recalculating the whole thing, but this just means changing the
+    @ push instruction register list.
 
     @ You may notice that I don't manually set up the stack pointer.
     @ This is only required for multiboot ROMs and I don't care about that.
@@ -122,57 +122,57 @@ _start:
     @@@@@@@@@@@@@@@@@@@@@@@@@ BEGIN SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@
 .Lentry:
     @ (game title)
-
-    @ EMULATOR BUG: Neither mGBA or VBA-M use the correct registers on entry, resulting
-    @ in this jumping to a bad address. However this instruction is necessary on hardware
-    @ to have the correct header checksum, unless you can find something different.
-    @ Define EMULATOR_BIOS to make something that works on emulator BIOSes. However,
-    @ due to the checksum error, it will not work on hardware or real GBA BIOS.
-.ifdef EMULATOR_BIOS
-    adr     lr, main + 1                @ same effect but doesn't match checksum
-.else
-    adds    lr, lr, #main - _start + 1  @ lr = main + 1 (lr = _start on boot with GBA BIOS)
-.endif
-    bx      lr                          @ Get out of this dummy thicc ARM mode
+    adr     r0, main + 1                @ same effect but doesn't match checksum
+    bx      r0                          @ Get out of this dummy thicc ARM mode
 
     .thumb
     .thumb_func
 main:
-    movs    r6, #0x80                   @ TIMER_ENABLE, also used for constants
+    movs    r1, #0x80                   @ TIMER_ENABLE, also used for constants
     movs    TILES, #0x06
     @ (game code)
     lsls    TILES, #24                  @ TILES = 0x06000000
-    lsls    TIMER_BASE, r6, #19
+    lsls    TIMER_BASE, r1, #19
     @ (maker code)
     adds    TIMER_BASE, #0x100 - 0x96   @ We are going to need two adds instructions since we need to add 256,
     @ (Fixed value 0x96)                @ so we use this opportunity to encode the required 0x96 byte here
     adds    TIMER_BASE, #0x96           @ TIMER_BASE = 0x04000100   (encodes to 0x96 0x35 satisfying the header)
     @ device type, 7 reserved bytes        
-    strh    r6, [TIMER_BASE, #TM0CNT_H] @ TM0CNT_H = TIMER_ENABLE
-    lsls    r1, r6, #7                  @ r1 = 0x00004000
-    eors    r1, TILES                   @ r1 = 0x06004000 = tileset 1
+    strh    r1, [TIMER_BASE, #TM0CNT_H] @ TM0CNT_H = TIMER_ENABLE
+    lsls    r1, r1, #7                  @ r1 = 0x00004000
+    movs    r0, #0x05                   @ Both TILE_EMPTY and literal for palette memory
+    lsls    PAL_RAM, r0, #24            @ PAL_RAM = 0x05000000
+
+    @ This push instruction is encoded as (note: little endian so reglist comes first)
+    @           15-9        8         7    6    5    4    3    2    1    0
+    @    | 1 0 1 1 0 1 0 | lr |    | r7 | r6 | r5 | r4 | r3 | r2 | r1 | r0 |
+    @ By changing the registers we push, we can always make the checksum either 0xB4 (push w/o lr) or
+    @ 0xB5 (push with lr), as long as we push r0 to get the top value to the stack.
+    @ version (reglist), checksum (opcode)
+.Lversion_and_checksum:
+    push    {r0,r1,r2,r4,r5,r6,lr}      @ Encodes and corrects the checksum, pushes r0 (plus junk) to the stack for CpuSet
+    @@@@@@@@@@@@@@@@@@@@@@@@@ END SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@
+
+    @ (reserved 2 bytes)
+    ldr     r0, palette
+    @ End header
+    str     r0, [PAL_RAM, #4]           @ pal[2] = GREEN, pal[3] = RED
+    adds    r1, TILES                   @ r1 = 0x06004000 = tileset 1
     adr     r0, rle_tiles               @ note: PC-relative, this will change if the literal pool is removed
     @ software version, checksum
     swi     SWI_RLUnCompVram            @ RLUnCompVram(rle_tiles, 0x06004000) (encodes to version 0x15, checksum 0xDF)
 
-    @@@@@@@@@@@@@@@@@@@@@@@@@ END SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@
-.Lreserved_2_code:
-    movs    r0, #0x05                   @ Both TILE_EMPTY and literal for palette memory
-    @ (End of the header)
-    lsls    PAL_RAM, r0, #24            @ PAL_RAM = 0x05000000
-    ldr     r0, palette
-    str     r0, [PAL_RAM, #4]           @ pal[2] = GREEN, pal[3] = RED
 .Lplay_again:
     @ clear tile ram
     @ CpuSet(TILES, 0x0005, TILES_HEIGHT * TILES_WIDTH | CPU_FILL)
-    adr     r0, k_empty_tile
+    mov     r0, sp                      @ Grab the TILE_EMPTY I pushed to the stack
     movs    r1, TILES
     ldr     r2, =(TILES_HEIGHT * TILES_WIDTH * 2 / 2) | CPU_FILL
     swi     SWI_CpuSet
-    movs    head, #START_POS >> 1       @ start in the middle, roughly
-    lsls    head, #2
-    strh    direction, [TILES, head]
-    mov     tail, head                  @ start with head==tail
+    movs    Head, #START_POS >> 1       @ start in the middle, roughly
+    lsls    Head, #2
+    strh    Direction, [TILES, Head]
+    mov     Tail, Head                  @ start with head==tail
 .Lgenerate_apple:
     ldrh    r0, [TIMER_BASE, #TM0CNT_L] @ Use TM0CNT_L for rng
     movs    r1, #SCREEN_HEIGHT_TILES
@@ -211,46 +211,44 @@ main:
     ldrh    r2, [TIMER_BASE, #KEYINPUT] @ read REG_KEYINPUT
     lsrs    r2, #5                      @ test RIGHT bit by shifting out
     bcs     .Lnot_right                 @ CS = not pressed
-    movs    direction, #TILE_RIGHT
+    movs    Direction, #TILE_RIGHT
 .Lnot_right:
     lsrs    r2, #1                      @ test LEFT                  
     bcs     .Lnot_left
-    movs    direction, #TILE_LEFT
+    movs    Direction, #TILE_LEFT
 .Lnot_left:
     lsrs    r2, #1                      @ test UP
     bcs     .Lnot_up
-    movs    direction, #TILE_UP
+    movs    Direction, #TILE_UP
 .Lnot_up:
     lsrs    r2, #1                      @ test DOWN
     bcs     .Lnot_down
-    movs    direction, #TILE_DOWN
+    movs    Direction, #TILE_DOWN
 .Lnot_down:
-    strh    direction, [TILES, head]    @ save snek tile with next direction
+    strh    Direction, [TILES, Head]    @ save snek tile with next direction
     adr     r3, direction_lut           @ Move head pointer
-    ldrsb   r0, [r3, direction]
-    adds    head, r0
-.Lcheck_tile:
-    cmp     head, #0                    @ too high
-    blt     .Lplay_again
-    lsrs    r0, head, #5 + 1            @ (head / 32) / 2
+    ldrsb   r0, [r3, Direction]
+    adds    Head, r0                    @ note: sets flags
+    blt     .Lplay_again                @ too high
+    lsrs    r0, Head, #5 + 1            @ (head / 32) / 2
     cmp     r0, #SCREEN_HEIGHT_TILES    @ Check if too low    
     bge     .Lplay_again
-    lsls    r0, head, #32 - 5 - 1       @ (head / 2) % 32
+    lsls    r0, Head, #32 - 5 - 1       @ (head / 2) % 32
     lsrs    r0, #32 - 5
     cmp     r0, #SCREEN_WIDTH_TILES     @ Check if too far left/right (will wrap)
     bge     .Lplay_again 
-    ldrh    r0, [TILES, head]           @ Load the new tile
-    strh    direction, [TILES, head]    @ Store new direction
+    ldrh    r0, [TILES, Head]           @ Load the new tile
+    strh    Direction, [TILES, Head]    @ Store new direction
     cmp     r0, #TILE_APPLE             @ Check the new tile
     blt     .Lplay_again                @ snek < apple, we ate ourselves
     beq     .Lgenerate_apple            @ apple, grow (a.k.a. don't erase tail) and make apple
 .Ldont_eat_apple:                       @ otherwise empty tile
-    mov     r0, tail                    @ annoying hi registers
+    mov     r0, Tail                    @ annoying hi registers
     ldrh    r1, [TILES, r0]             @ load tail direction
     movs    r2, #TILE_EMPTY             @ erase
     strh    r2, [TILES, r0]             @ move tail to the next tile
     ldrsb   r3, [r3, r1]                @ move tail pointer
-    add     tail, r3
+    add     Tail, r3
     b       .Lgame_loop
 
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -262,8 +260,6 @@ main:
     @ Because I didn't manually align palette, this will
     @ error out the assembler if this literal pool is
     @ not aligned instead of it silently adding padding.
-
-
 palette:
     rgb     0,  31,  0                  @ green
     rgb     31,  0,  0                  @ red
@@ -282,6 +278,3 @@ direction_lut:
     .byte   -2                          @ TILE_LEFT
     .byte   -(TILES_WIDTH * 2)          @ TILE_UP
     .byte   TILES_WIDTH * 2             @ TILE_DOWN
-
-k_empty_tile:
-    .hword TILE_EMPTY
