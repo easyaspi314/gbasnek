@@ -122,8 +122,8 @@ _start:
     @@@@@@@@@@@@@@@@@@@@@@@@@ BEGIN SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@
 .Lentry:
     @ (game title)
-    adr     r0, main + 1                @ same effect but doesn't match checksum
-    bx      r0                          @ Get out of this dummy thicc ARM mode
+    adr     r0, main + 1                @ Get address of main + thumb bit
+    bx      r0                          @ BX out of this dummy thicc ARM mode
 
     .thumb
     .thumb_func
