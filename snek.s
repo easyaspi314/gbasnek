@@ -44,12 +44,12 @@
 
     @ The game uses the tilemap to both display the game and
     @ track game state.
-    @ IMPORTANT: It is expected that snek tiles < apple < empty.
+    @ IMPORTANT: It is expected that snek tiles < appel < empty.
     .equ TILE_RIGHT, 0x000              @ snek, green square
     .equ TILE_LEFT,  0x001              @ snek, green square
     .equ TILE_UP,    0x002              @ snek, green square
     .equ TILE_DOWN,  0x003              @ snek, green square
-    .equ TILE_APPLE, 0x004              @ red square
+    .equ TILE_APPEL, 0x004              @ red square
     .equ TILE_EMPTY, 0x005              @ black square
 
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -173,7 +173,7 @@ main:
     lsls    Head, #2
     strh    Direction, [TILES, Head]
     mov     Tail, Head                  @ start with head==tail
-.Lgenerate_apple:
+.Lgenerate_appel:
     ldrh    r0, [TIMER_BASE, #TM0CNT_L] @ Use TM0CNT_L for rng
     movs    r1, #SCREEN_HEIGHT_TILES
     swi     SWI_Div                     @ TM0CNT_L % 20
@@ -184,8 +184,8 @@ main:
     adds    r0, r2                      @ get address
     ldrh    r1, [TILES, r0]             @ check if we are on a clear tile
     cmp     r1, #TILE_EMPTY
-    bne     .Lgenerate_apple            @ whoops, try again
-    movs    r1, #TILE_APPLE             @ Store an apple
+    bne     .Lgenerate_appel            @ whoops, try again
+    movs    r1, #TILE_APPEL             @ Store an appel
     strh    r1, [TILES, r0]
 .Lgame_loop:
     movs    r1, #0x04                   @ 4 + 1 frame skip, and for pointer address
@@ -239,10 +239,10 @@ main:
     bge     .Lplay_again 
     ldrh    r0, [TILES, Head]           @ Load the new tile
     strh    Direction, [TILES, Head]    @ Store new direction
-    cmp     r0, #TILE_APPLE             @ Check the new tile
-    blt     .Lplay_again                @ snek < apple, we ate ourselves
-    beq     .Lgenerate_apple            @ apple, grow (a.k.a. don't erase tail) and make apple
-.Ldont_eat_apple:                       @ otherwise empty tile
+    cmp     r0, #TILE_APPEL             @ Check the new tile
+    blt     .Lplay_again                @ snek < appel, we ate ourselves
+    beq     .Lgenerate_appel            @ appel, grow (a.k.a. don't erase tail) and make appel
+.Ldont_eat_appel:                       @ otherwise empty tile
     mov     r0, Tail                    @ annoying hi registers
     ldrh    r1, [TILES, r0]             @ load tail direction
     movs    r2, #TILE_EMPTY             @ erase
@@ -270,7 +270,7 @@ palette:
 rle_tiles:
     rl_hdr  160                         @ header
     rl_rep  4 * TILE_BYTES, 0x22        @ 4 green tiles for snek
-    rl_rep  1 * TILE_BYTES, 0x33        @ 1 red tile for apple
+    rl_rep  1 * TILE_BYTES, 0x33        @ 1 red tile for appel
 
     @ Lookup table for how far to move the pointer
 direction_lut:

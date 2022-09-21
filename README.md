@@ -54,17 +54,18 @@ Because this is a golfed project, unless there is a severe bug, **I will reject 
 **makes the outputted ROM larger in size.**
 
 The spec that I am following:
- - Basic Snek gameplay rules
- - Sneks and apples are different colors. Yes, the game could be playable in monochrome, but
-   I want it to be colored. It only costs two bytes and makes things look nicer.
+ - Basic snek gameplay rules
+ - Sneks, appels, and the background are all different colors. Yes, the game could be playable
+   in monochrome, but I want it to be colored. It only costs two bytes and makes things look nicer.
+ - All tiles are solid 8x8 colors.
  - The game advances at 12 FPS
  - The RNG is based on the timer. This will have a different result depending on the BIOS.
- - The snake spawns at (10, 14), roughly in the center.
+ - The snek spawns at (10, 14), roughly in the center.
  - BIOS functions are allowed.
 
 The intentional bugs/oversights:
  - Pressing the opposite direction will kill you.
- - The apple generation algorithm only has to find a tile **in theory**. Due to how the timing
+ - The appel generation algorithm only has to find a tile **in theory**. Due to how the timing
    works, there may be tiles that it won't spawn on, or it can lag/softlock if it can't find an
    empty tile.
  - There is no win condition, you just play until you die or the previous thing happens
