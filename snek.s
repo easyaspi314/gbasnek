@@ -102,7 +102,7 @@
     @ Variables
     Head        .req r5
     Direction   .req r7
-    Tail        .req r8                  @ NOTE: hi register
+    Tail        .req r8                  @ NOTE: hi register. Can this be improved?
 
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @                     ROM HEADER                   @
@@ -111,8 +111,8 @@
     .globl main
     .arm
 _start:
-    b       .Lentry                      @ I really wish BLX was in v4T.
-.Lgba_header:
+    b       arm_veneer                  @ I really wish BLX was in v4T.
+nintendo_logo:
     @ Nintendo logo
     .byte 0x24, 0xff, 0xae, 0x51, 0x69, 0x9a, 0xa2, 0x21, 0x3d, 0x84, 0x82, 0x0a
     .byte 0x84, 0xe4, 0x09, 0xad, 0x11, 0x24, 0x8b, 0x98, 0xc0, 0x81, 0x7f, 0x21
@@ -139,10 +139,10 @@ _start:
     @ This is only required for multiboot ROMs and I don't care about that.
 
     @@@@@@@@@@@@@@@@@@@@@@@@@ BEGIN SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@
-.Lentry:                               @ Jump to thumb mode
+arm_veneer:                             @ Jump to thumb mode
     @ Game title
-    adr     r6, main + 1               @ Get address of main + thumb bit
-    bx      r6                         @ BX out of this dummy thicc ARM mode
+    adr     r6, main + 1                @ Get address of main + thumb bit
+    bx      r6                          @ BX out of this dummy thicc ARM mode
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @                      GAME CODE                   @
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -195,22 +195,26 @@ main:                                   @ Set up registers, tiles, and such
 .Lgenerate_appel:                       @ Generate a new appel.
     ldrh    r0, [IO_2, #TM0CNT_L]       @ Use TM0CNT_L for rng
     movs    r1, #SCREEN_HEIGHT_TILES
-    swi     SWI_Div                     @ TM0CNT_L % 20
-    lsls    r2, r1, #6                  @ save as row (Div doesn't overwrite r2)
+    swi     SWI_Div                     @ row = TM0CNT_L % 20
+    lsls    r2, r1, #6                  @ row *= TILES_WIDTH * U16 (Div preserves r2)
     movs    r1, #SCREEN_WIDTH_TILES
-    swi     SWI_Div                     @ (TM0CNT_L / 20) % 30
-    lsls    r0, r1, #1
-    adds    r0, r2                      @ get address
-    ldrh    r1, [VRAM, r0]              @ check if we are on a clear tile
-    cmp     r1, #TILE_EMPTY
+    swi     SWI_Div                     @ col = (TM0CNT_L / 20) % 30
+    lsls    r1, #1                      @ col *= U16
+    adds    r1, r2                      @ get address
+    ldrh    r0, [VRAM, r1]              @ check if we are on a clear tile
+    cmp     r0, #TILE_EMPTY
     bne     .Lgenerate_appel            @ not an appel, try again
 .Lgenerate_appel.end:
-    movs    r1, #TILE_APPEL             @ Store an appel
-    strh    r1, [VRAM, r0]
+    movs    r0, #TILE_APPEL             @ Store an appel
+    strh    r0, [VRAM, r1]
 
 .Lgame_loop:                            @ Main loop
-    movs    r1, #MAP_IO >> 24           @ 0x04, frame skip, and for pointer address
+    movs    r1, #MAP_IO >> 24           @ 0x04, number of keys, pointer address
     lsls    IO, r1, #24                 @ 0x04000000
+    strh    r1, [IO, #BG0CNT]           @ set BG0 mode
+    lsls    r2, r1, #8 - 2              @ 0x100 == BG0_ENABLE, loop counter times 64
+    strh    r2, [IO, #DISPCNT]          @ set display mode
+
 .Ldelay_frames:                         @ Delay 5 frames for 12 FPS.
 .Lvblank_pre_loop:                      @ loop until out of vblank
     ldrh    r0, [IO, #VCOUNT]           @ read current line
@@ -222,14 +226,9 @@ main:                                   @ Set up registers, tiles, and such
     cmp     r0, #SCREEN_HEIGHT
     blo     .Lvblank_loop
 .Lvblank_loop.end:
-    subs    r1, #1                      @ end of frame, loop again
-    bge     .Ldelay_frames
+    subs    r2, #0x100 / 4              @ Subtract from our loop counter times 64
+    bpl     .Ldelay_frames              @ Jump if not negative (after 5 iterations)
 .Ldelay_frames.end:
-.Lset_display_mode:                     @ Set display mode. Redundant but register values are needed anyway
-    movs    r1, #(1 << 2)               @ 4 for dpad directions, CHAR_BASE(1)
-    strh    r1, [IO, #BG0CNT]           @ BG0CNT
-    lsls    r2, r1, #8-2                @ 0x100 == BG0_ENABLE
-    strh    r2, [IO, #DISPCNT]          @ DISPCNT
 
     @ input testing
     @ KEYINPUT layout
@@ -242,20 +241,22 @@ main:                                   @ Set up registers, tiles, and such
 .Linput_loop:
     lsls    r2, #1                      @ Test next bit into carry flag
     bcs     .Lnot_pressed               @ CS = bit set = not pressed
-    subs    Direction, r1, #1           @ note: minus one because we decrement after
+.Lpressed:                              @ Pressed, set the direction
+    subs    Direction, r1, #1           @ The decrement is below, so we still need to sub 1
 .Lnot_pressed:
     subs    r1, #1                      @ repeat for all directions
     bne     .Linput_loop
 .Linput_loop.end:
     strh    Direction, [VRAM, Head]     @ save snek tile with next direction
-    adr     LUT, direction_lut          @ Move head pointer
-    ldrsb   r0, [LUT, Direction]
-    adds    Head, r0                    @ note: sets flags
-    blt     .Lplay_again                @ too high
-    lsrs    r0, Head, #5 + 1            @ (head / U16) / 32
+    adr     LUT, direction_lut          @ Get LUT
+    ldrsb   r0, [LUT, Direction]        @ Load pointer offset from the LUT
+    adds    Head, r0                    @ Move pointer, sets condition codes
+.Lcheck_tile:                           @ Check the tile (condition codes set above)
+    bmi     .Lplay_again                @ if < 0, we are too high
+    lsrs    r0, Head, #5 + 1            @ (head / U16) / TILES_WIDTH
     cmp     r0, #SCREEN_HEIGHT_TILES    @ Check if too low
     bge     .Lplay_again
-    lsls    r0, Head, #32 - 5 - 1       @ (head / U16) % 32
+    lsls    r0, Head, #32 - 5 - 1       @ (head / U16) % TILES_WIDTH
     lsrs    r0, #32 - 5
     cmp     r0, #SCREEN_WIDTH_TILES     @ Check if too far left/right (will wrap)
     bge     .Lplay_again
@@ -265,10 +266,9 @@ main:                                   @ Set up registers, tiles, and such
     blt     .Lplay_again                @ snek < appel, we ate ourselves
     beq     .Lgenerate_appel            @ appel, grow (a.k.a. don't erase tail) and make appel
 .Ldont_eat_appel:                       @ otherwise empty tile
-    mov     r0, Tail                    @ annoying hi registers
-    ldrh    r1, [VRAM, r0]              @ load tail direction
-    movs    r2, #TILE_EMPTY             @ erase
-    strh    r2, [VRAM, r0]              @ move tail to the next tile
+    mov     r2, Tail                    @ annoying hi registers
+    ldrh    r1, [VRAM, r2]              @ load tail direction
+    strh    r0, [VRAM, r2]              @ move tail to the next tile (r0 == TILE_EMPTY)
     ldrsb   r3, [LUT, r1]               @ move tail pointer
     add     Tail, r3
     b       .Lgame_loop                 @ loop again
@@ -288,18 +288,18 @@ main:                                   @ Set up registers, tiles, and such
 literal_pool_aligned:
     .p2align 2,0
 literal_pool_misaligned:
-    @ GBA RLE encoded tile data
-rle_tiles:
-    rl_hdr  160                         @ header
-    rl_rep  4 * TILE_BYTES, 0x22        @ 4 green VRAM for snek
-    rl_rep  1 * TILE_BYTES, 0x33        @ 1 red tile for appel
-
     @ Lookup table for how far to move the pointer
 direction_lut:
     .byte   U16                         @ TILE_RIGHT
     .byte   -U16                        @ TILE_LEFT
     .byte   -(TILES_WIDTH * U16)        @ TILE_UP
     .byte   TILES_WIDTH * U16           @ TILE_DOWN
+
+    @ GBA RLE encoded tile data
+rle_tiles:
+    rl_hdr  160                         @ header
+    rl_rep  4 * TILE_BYTES, 0x22        @ 4 green VRAM for snek
+    rl_rep  1 * TILE_BYTES, 0x33        @ 1 red tile for appel
 palette:
     rgb     0,  31,  0                  @ green
     rgb     31,  0,  0                  @ red

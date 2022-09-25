@@ -2,7 +2,7 @@
 
 a smol snek game for the gba
 
-it is 344 bytes smol and wishes 2 become smoller
+it is 340 bytes smol and wishes 2 become smoller
 
 ### how 2 play
 
@@ -43,7 +43,7 @@ to ["A Whirlwind Tutorial on Creating Really Teensy ELF Executables for Linux](h
 
 The size is of the entire ROM, including the header. That means there is an annoying 156 byte
 penalty due to the required Nintendo logo, and 12 bytes of ARM instructions needed to jump past
-the header and switch to Thumb mode (there's no `blx` in ARMv4T) so it is basically 176 bytes
+the header and switch to Thumb mode (there's no `blx` in ARMv4T) so it is basically 172 bytes
 of meaningful code and 168 bytes of boilerplate that doesn't directly affect the game code.
 
 The code in the header was brute forced to match the checksum naturally. If you change the code,
