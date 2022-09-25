@@ -2,7 +2,7 @@
 
 a smol snek game for the gba
 
-it is 352 bytes smol and wishes 2 become smoller
+it is 344 bytes smol and wishes 2 become smoller
 
 ### how 2 play
 
@@ -41,17 +41,25 @@ The output will be snek.gba, as well as some intermediate files.
 This uses a *barely legal* ROM header which puts code in the header fields, in a way similar
 to ["A Whirlwind Tutorial on Creating Really Teensy ELF Executables for Linux](https://www.muppetlabs.com/~breadbox/software/tiny/teensy.html).
 
-The `push` instruction is used to encode *and* correct the checksum (as well as push `r0` to
-the stack so it can be used for the `CpuSet` call).
+The size is of the entire ROM, including the header. That means there is an annoying 156 byte
+penalty due to the required Nintendo logo, and 12 bytes of ARM instructions needed to jump past
+the header and switch to Thumb mode (there's no `blx` in ARMv4T) so it is basically 176 bytes
+of meaningful code and 168 bytes of boilerplate that doesn't directly affect the game code.
 
-If you modify the code in the header, you must modify the list of registers. The build script
-will mention it. In the future I will make the build script automatically update or calculate
-the required register list.
+The code in the header was brute forced to match the checksum naturally. If you change the code,
+you must fix the checksum. There are plenty of options, it just needs figuring out. Note that
+in addition, `lsls VRAM, r2, #22` must be at that exact offset with that exact encoding, as it
+encodes the mandatory `0x96` byte in the header.
 
 ### Contributing
 
 Because this is a golfed project, unless there is a severe bug, **I will reject anything that**
 **makes the outputted ROM larger in size.**
+
+The constant pool at the bottom must be 4 byte aligned, and the assembler will insert padding to
+satisfy this. Even if the code size doesnt change due to alignment, any reduction in the number
+of instructions is a win. I have inserted some label tricks that will show `literal_pool_misaligned`
+in `objdump`/`llvm-objdump`'s output if alignment bytes are included.
 
 The spec that I am following:
  - Basic snek gameplay rules
