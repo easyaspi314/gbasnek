@@ -7,11 +7,9 @@
     .globl  main
     .text
 
-    .equ U16, 2
-
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                   GBA CONSTANTS                  @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                 GBA CONSTANTS                                @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
     @ Memory maps
     .equ MAP_BIOS,   0x00000000
@@ -44,24 +42,27 @@
     .equ SCREEN_WIDTH, 240
     .equ SCREEN_HEIGHT, 160
 
+    .equ U16, 2
     @ 4bpp tile
     .equ TILE_BYTES, 32
     .equ TILE_PIXELS, 8
-    .equ TILES_WIDTH, 32
-    .equ TILES_HEIGHT, 32
+    .equ BG_WIDTH, 32
+    .equ BG_HEIGHT, 32
 
-    .equ SCREEN_WIDTH_TILES, SCREEN_WIDTH / TILE_PIXELS
-    .equ SCREEN_HEIGHT_TILES, SCREEN_HEIGHT / TILE_PIXELS
+    .equ U16_LG2, 1
+    .equ BG_WD_2, 5 @ log2(BG_WIDTH) for shifts
 
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                    MY CONSTANTS                  @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    .equ SCREEN_BG_WIDTH, SCREEN_WIDTH / TILE_PIXELS
+    .equ SCREEN_BG_HEIGHT, SCREEN_HEIGHT / TILE_PIXELS
+
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                    MY CONSTANTS                              @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
     @ XXX: Would 1D tiles make this shorter? The logic to check tiles would be odd.
-    .equ START_POS, TILES_WIDTH * (SCREEN_HEIGHT_TILES / 2) + (SCREEN_WIDTH_TILES / 2)
+    .equ START_POS, BG_WIDTH * (SCREEN_BG_HEIGHT / 2) + (SCREEN_BG_WIDTH / 2)
 
-    @ The game uses the tilemap to both display the game and
-    @ track game state.
+    @ The game uses the tilemap to both display the game and track game state.
     @ IMPORTANT: It is expected that snek tiles < appel < empty.
     .equ TILE_RIGHT, 0x000              @ snek, green square
     .equ TILE_LEFT,  0x001              @ snek, green square
@@ -70,43 +71,49 @@
     .equ TILE_APPEL, 0x004              @ red square
     .equ TILE_EMPTY, 0x005              @ black square
 
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                       MACROS                     @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                     MACROS                                   @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
+    @ Converts to.RGB5
     .macro rgb r, g, b
         .hword ((\r) << 0) | ((\g) << 5) | ((\b) << 10)
     .endm
+    @ Header for GBA run length encoding block
     .macro rl_hdr len
         .word (3 << 4) | ((\len) << 8)
     .endm
+    @ Encodes the byte val repeates len times
     .macro rl_rep len, val
         .byte 0x80 | ((\len - 3) & 0x7f)
         .byte \val
     .endm
+    @ Encodes the len bytes vals
     .macro rl_lit len, val:vararg
         .byte ((\len - 1) & 0x7f)
         .byte \val
     .endm
 
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                      REGISTERS                   @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                    REGISTERS                                 @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
     @ Constants
     LUT         .req r3                  @ direction lookup table (volatile)
     IO          .req r3                  @ 0x04000000 (volatile)
-    IO_2        .req r4                  @ 0x04000100
+    IO_2        .req r4                  @ 0x04000000 + BASE_2
     PAL_RAM     .req r5                  @ 0x05000000 (overwritten)
     VRAM        .req r6                  @ 0x06000000 (tile map 0), must be r6
 
     @ Variables
     Head        .req r5
-    Direction   .req r7
+    Dir         .req r7
     Tail        .req r8                  @ NOTE: hi register. Can this be improved?
 
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                     ROM HEADER                   @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                   ROM HEADER                                 @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
     .globl _start
     .globl main
     .arm
@@ -143,76 +150,76 @@ arm_veneer:                             @ Jump to thumb mode
     @ Game title
     adr     r6, main + 1                @ Get address of main + thumb bit
     bx      r6                          @ BX out of this dummy thicc ARM mode
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                      GAME CODE                   @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                  GAME CODE                                   @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
     @ Still in the ROM header but these are the instructions that are useful
-    .thumb
     .thumb_func
 main:                                   @ Set up registers, tiles, and such
     movs    r1, #0x80                   @ TIMER_ENABLE, also used for constants
-    lsls    IO_2, r1, #19               @ IO_2 = 0x04000000
+    lsls    IO_2, r1, #19               @ => 0x04000000
     @ Game code
-    adds    IO_2, #BASE_2               @ IO_2 = 0x040000xx
+    adds    IO_2, #BASE_2               @ => 0x040000xx
     strh    r1, [IO_2, #TM0CNT_H]       @ TM0CNT_H = TIMER_ENABLE
     @ Maker code
-    movs    r2, #MAP_VRAM >> 22
+    movs    r2, #MAP_VRAM >> 22         @ => 0x18
 
     @ This instruction encodes the mandatory value 0x96 at offset 0x080000b2.
     @ |  15 - 11  |  10 - 6   | 5 - 3 | 0 - 2 |
     @ | 0 0 0 0 0 |   imm5    |  Rm   |  Rd   |   lsls   Rd, Rm, #imm5
     @ | 0 0 0 0 0 | 1 0 1 1 0 | 0 1 0 | 1 1 0 |   lsls   r6, r2, #22
-    @ '------- 0x05 -----'------- 0x96 -------'
+    @ '------- 0x05 -----'------- 0x96 -------'   .byte  0x96, 0x05
     @ Fixed value 0x96, main unit code
-    lsls    VRAM, r2, #22               @ VRAM = 0x06000000
+    lsls    VRAM, r2, #22               @ => 0x06000000
     @ Device type, 7 reserved bytes
-    lsls    r3, r1, #7                  @ r1 = 0x00004000
-    adds    r1, VRAM, r3                @ r1 = 0x06004000 = tileset map 1
+    lsls    r3, r1, #7                  @ => 0x00004000
+    adds    r1, VRAM, r3                @ => 0x06004000 = tileset map 1
     adr     r0, rle_tiles               @ note: PC-relative, this will change if the literal pool is moved
     swi     SWI_RLUnCompVram            @ RLUnCompVram(rle_tiles, 0x06004000)
 .Lplay_again:                           @ Reset the state of the game (mostly)
     @ Software version, checksum (0x20) @ Set the palette. Redundant but I need 5 in a register below.
-    movs    r0, #MAP_PAL >> 24          @ Both TILE_EMPTY and literal for palette memory
-    @@@@@@@@@@@@@@@@@@@@@@@@@ END SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@
-
-    lsls    PAL_RAM, r0, #24            @ PAL_RAM = 0x05000000
+    movs    r0, #MAP_PAL >> 24          @ => 5. Both TILE_EMPTY and literal for palette address
+    @@@@@@@@@@@@@@@@@@@@@@@@@@ END SENSITIVE INSTRUCTIONS @@@@@@@@@@@@@@@@@@@@@@@@@@
+    lsls    PAL_RAM, r0, #24            @ => 0x05000000
     ldr     r1, palette
     str     r1, [PAL_RAM, #4]           @ Set palette: pal[2] = GREEN, pal[3] = RED
 .Lclear_tiles:                          @ Clear the tile memory to reset the board
-    lsrs    r1, IO_2, #15               @ 0x040000xx >> 15 = 0x800 = TILES_WIDTH * TILES_HEIGHT * U16
+    idx     .req Dir                    @ Ensure this loop clears Dir
+
+    lsls    idx, r0, #8                 @ => 0x500 = BG_WIDTH * SCREEN_BG_HEIGHT * U16
 .Lclear_loop:                           @ simple memset loop
-    subs    r1, #2
-    strh    r0, [VRAM, r1]
+    subs    idx, #2
+    strh    r0, [VRAM, idx]
     bne     .Lclear_loop
 .Lclear_loop.end:
 .Lset_head:                             @ Set the initial head and tail state.
     movs    Head, #START_POS >> 1       @ start in the middle, roughly
-    lsls    Head, #2
-    strh    Direction, [VRAM, Head]     @ Assume the emulator is sane and zeroes out r7 on boot
+    lsls    Head, #1 + 1                @ => START_POS * U16
+    strh    Dir, [VRAM, Head]           @ note: due to the clear loop, Dir == 0 == TILE_RIGHT
     mov     Tail, Head                  @ start with head==tail
 
 .Lgenerate_appel:                       @ Generate a new appel.
     ldrh    r0, [IO_2, #TM0CNT_L]       @ Use TM0CNT_L for rng
-    movs    r1, #SCREEN_HEIGHT_TILES
-    swi     SWI_Div                     @ row = TM0CNT_L % 20
-    lsls    r2, r1, #6                  @ row *= TILES_WIDTH * U16 (Div preserves r2)
-    movs    r1, #SCREEN_WIDTH_TILES
+    movs    r1, #SCREEN_BG_HEIGHT       @ => 20
+    swi     SWI_Div                     @ row = TM0CNT_L % 20, tmp = TM0CNT_L / 20
+    lsls    r2, r1, #BG_WD_2 + 1        @ row *= BG_WIDTH * U16 (Div preserves r2)
+    movs    r1, #SCREEN_BG_WIDTH        @ => 30
     swi     SWI_Div                     @ col = (TM0CNT_L / 20) % 30
     lsls    r1, #1                      @ col *= U16
-    adds    r1, r2                      @ get address
+    adds    r1, r2                      @ col + (row * BG_WIDTH)
     ldrh    r0, [VRAM, r1]              @ check if we are on a clear tile
     cmp     r0, #TILE_EMPTY
-    bne     .Lgenerate_appel            @ not an appel, try again
+    bne     .Lgenerate_appel            @ not available, try again
 .Lgenerate_appel.end:
     movs    r0, #TILE_APPEL             @ Store an appel
     strh    r0, [VRAM, r1]
 
 .Lgame_loop:                            @ Main loop
-    movs    r1, #MAP_IO >> 24           @ 0x04, number of keys, pointer address
-    lsls    IO, r1, #24                 @ 0x04000000
+    movs    r1, #MAP_IO >> 24           @ => 0x04, number of keys, pointer address
+    lsls    IO, r1, #24                 @ => 0x04000000
     strh    r1, [IO, #BG0CNT]           @ set BG0 mode
-    lsls    r2, r1, #8 - 2              @ 0x100 == BG0_ENABLE, loop counter times 64
+    lsls    r2, r1, #8 - 2              @ => 0x100 == BG0_ENABLE, loop counter times 64
     strh    r2, [IO, #DISPCNT]          @ set display mode
 
 .Ldelay_frames:                         @ Delay 5 frames for 12 FPS.
@@ -242,63 +249,60 @@ main:                                   @ Set up registers, tiles, and such
     lsls    r2, #1                      @ Test next bit into carry flag
     bcs     .Lnot_pressed               @ CS = bit set = not pressed
 .Lpressed:                              @ Pressed, set the direction
-    subs    Direction, r1, #1           @ The decrement is below, so we still need to sub 1
+    subs    Dir, r1, #1                 @ The decrement is below, so we still need to sub 1
 .Lnot_pressed:
     subs    r1, #1                      @ repeat for all directions
     bne     .Linput_loop
 .Linput_loop.end:
-    strh    Direction, [VRAM, Head]     @ save snek tile with next direction
+    strh    Dir, [VRAM, Head]           @ save snek tile with next direction
     adr     LUT, direction_lut          @ Get LUT
-    ldrsb   r0, [LUT, Direction]        @ Load pointer offset from the LUT
+    ldrsb   r0, [LUT, Dir]              @ Load pointer offset from the LUT
     adds    Head, r0                    @ Move pointer, sets condition codes
 .Lcheck_tile:                           @ Check the tile (condition codes set above)
     bmi     .Lplay_again                @ if < 0, we are too high
-    lsrs    r0, Head, #5 + 1            @ (head / U16) / TILES_WIDTH
-    cmp     r0, #SCREEN_HEIGHT_TILES    @ Check if too low
+    lsrs    r0, Head, #BG_WD_2 + 1      @ (head / U16) / BG_WIDTH
+    cmp     r0, #SCREEN_BG_HEIGHT       @ Check if too low
     bge     .Lplay_again
-    lsls    r0, Head, #32 - 5 - 1       @ (head / U16) % TILES_WIDTH
-    lsrs    r0, #32 - 5
-    cmp     r0, #SCREEN_WIDTH_TILES     @ Check if too far left/right (will wrap)
+    lsls    r0, Head, #32 - BG_WD_2 - 1 @ (head / U16) % BG_WIDTH
+    lsrs    r0, #32 - BG_WD_2
+    cmp     r0, #SCREEN_BG_WIDTH        @ Check if too far left/right (will wrap)
     bge     .Lplay_again
     ldrh    r0, [VRAM, Head]            @ Load the new tile
-    strh    Direction, [VRAM, Head]     @ Store new direction
+    strh    Dir, [VRAM, Head]           @ Store new direction
     cmp     r0, #TILE_APPEL             @ Check the new tile
     blt     .Lplay_again                @ snek < appel, we ate ourselves
     beq     .Lgenerate_appel            @ appel, grow (a.k.a. don't erase tail) and make appel
 .Ldont_eat_appel:                       @ otherwise empty tile
-    mov     r2, Tail                    @ annoying hi registers
+    mov     r2, Tail                    @ mov out of hi register
     ldrh    r1, [VRAM, r2]              @ load tail direction
-    strh    r0, [VRAM, r2]              @ move tail to the next tile (r0 == TILE_EMPTY)
+    strh    r0, [VRAM, r2]              @ move tail to the next tile (r1 == TILE_EMPTY)
     ldrsb   r3, [LUT, r1]               @ move tail pointer
     add     Tail, r3
     b       .Lgame_loop                 @ loop again
 
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @                  LITERAL POOL                    @
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @ This must be aligned at a 4 byte boundary. The assembler
-    @ will zero pad to fit this, which is why sizes will
-    @ be in multiples of 4. However, code that would decrease
-    @ the binary size if the alignment was not required is still
-    @ a win as it leads to further code size reductions.
-    @ If you see `literal_pool_misaligned` in `objdump`'s output,
-    @ you have an alignment (this works because it merges adjacent
-    @ labels).
-
-literal_pool_aligned:
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @                                 LITERAL.POOL                                 @
+    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    @ This must be aligned at a 4 byte boundary. The assembler will zero pad to fit
+    @ this, which is why sizes will be in multiples of 4. However, code that would
+    @ decrease the binary size if the alignment was not required is still accepted
+    @ as it leads to further code size reductions.
+    @
+    @ If you see `literal_pool_alignment` in `objdump`'s output, you have an alignment
+    @ (this works because it merges adjacent labels).
+literal_pool_alignment:
     .p2align 2,0
-literal_pool_misaligned:
     @ Lookup table for how far to move the pointer
 direction_lut:
     .byte   U16                         @ TILE_RIGHT
     .byte   -U16                        @ TILE_LEFT
-    .byte   -(TILES_WIDTH * U16)        @ TILE_UP
-    .byte   TILES_WIDTH * U16           @ TILE_DOWN
+    .byte   -(BG_WIDTH * U16)           @ TILE_UP
+    .byte   BG_WIDTH * U16              @ TILE_DOWN
 
     @ GBA RLE encoded tile data
 rle_tiles:
     rl_hdr  160                         @ header
-    rl_rep  4 * TILE_BYTES, 0x22        @ 4 green VRAM for snek
+    rl_rep  4 * TILE_BYTES, 0x22        @ 4 green tiles for snek
     rl_rep  1 * TILE_BYTES, 0x33        @ 1 red tile for appel
 palette:
     rgb     0,  31,  0                  @ green

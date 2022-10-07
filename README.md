@@ -51,6 +51,28 @@ you must fix the checksum. There are plenty of options, it just needs figuring o
 in addition, `lsls VRAM, r2, #22` must be at that exact offset with that exact encoding, as it
 encodes the mandatory `0x96` byte in the header.
 
+There are a few potential optimizations that I haven't had luck with.
+ - In theory, setting `sp` to point to the I/O registers would be great because normal registers
+   can't address all of the I/O registers at once. However...
+    - the timer is a halfword and there is no `ldrh Rd, [sp, #n]` in Thumb. This is a problem because
+      `TM0CNT_H` may set the sign bit, and when I call `SWI_Div`, it does a signed divide. While the
+      unsigned quotient is in `r3`, the unsigned modulo is not and may be sign extended.
+    - while `sp` can be set to `04000000` in a single ARM instruction, the BIOS interrupts will
+      overwrite the interrupt flags because it also executes in system mode.
+    - One version that doesn't corrupt is `rsb sp, pc, sp, lsl #18` which will get `F3FFFF58` (which
+      shadows `03007f58`), but mGBA chokes on shadow RAM and doesn't like it.
+ - It *may* be beneficial to use `BG_1D_MAP` to simplify the tile generation, but it will make
+   collision more difficult.
+ - It may be beneficial to make the tile generation do this
+ ```c
+ int idx;
+ do {
+     idx = TM0CNT_L % (32 * 20);
+ } while (!range_check(idx) || tiles[idx] != TILE_EMPTY);
+ ```
+ - If there was a way to get `Tail` out of a high register, that could eliminate a `mov`.
+    - Primary suspect is `Dir`. I'd love to get rid of it.
+
 ### Contributing
 
 Because this is a golfed project, unless there is a severe bug, **I will reject anything that**
@@ -68,7 +90,7 @@ The spec that I am following:
  - All tiles are solid 8x8 colors.
  - The game advances at 12 FPS
  - The RNG is based on the timer. This will have a different result depending on the BIOS.
- - The snek spawns at (10, 14), roughly in the center.
+ - The snek spawns at (10, 14), roughly in the center, initially moving right.
  - BIOS functions are allowed.
 
 The intentional bugs/oversights:
