@@ -1,5 +1,5 @@
     @ -*- ARM -*-
-    @ Copyright (C) 2022 easyaspi314
+    @ Copyright (C) 2022-2026 easyaspi314
     @ MIT License
 
     .syntax unified
